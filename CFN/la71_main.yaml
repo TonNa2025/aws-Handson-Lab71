@@ -1,0 +1,281 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Root Stack - Deploy Network, Security, ALB,
+  Compute and Route53 DNS nested stacks.
+
+# =========================================================
+# Parameters
+# =========================================================
+Parameters:
+
+  Project:
+    Type: String
+    Default: lab71
+    Description: Project name used as resource name prefix
+
+  # -------------------------------------------------------
+  # Nested template location
+  # -------------------------------------------------------
+  TemplateBucket:
+    Type: String
+    Description: S3 bucket containing nested CloudFormation templates
+
+  TemplatePrefix:
+    Type: String
+    Default: nested
+    Description: S3 prefix containing nested templates
+
+  # -------------------------------------------------------
+  # Network
+  # -------------------------------------------------------
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+
+  PublicSubnetAZ1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+
+  PublicSubnetAZ2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+
+  AvailabilityZone1:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: Availability Zone for Public Subnet AZ1
+
+  AvailabilityZone2:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: Availability Zone for Public Subnet AZ2
+
+  # -------------------------------------------------------
+  # Compute
+  # -------------------------------------------------------
+  AmiId:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    Description: Latest Amazon Linux 2023 AMI
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+
+  # -------------------------------------------------------
+  # HTTPS / ACM
+  # -------------------------------------------------------
+  CertificateArn:
+    Type: String
+    Description: ACM certificate ARN used by HTTPS listener
+
+  # -------------------------------------------------------
+  # Route53
+  # -------------------------------------------------------
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID
+
+  DomainName:
+    Type: String
+    Default: lab71.natst.online
+    Description: Domain name used to access the web application
+
+
+# =========================================================
+# Resources
+# =========================================================
+Resources:
+
+  # =======================================================
+  # Network Stack
+  # =======================================================
+  NetworkStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - "https://${Bucket}.s3.amazonaws.com/${Prefix}/lab71_network.yaml"
+        - Bucket: !Ref TemplateBucket
+          Prefix: !Ref TemplatePrefix
+
+      Parameters:
+        Project: !Ref Project
+
+        VpcCidr:
+          !Ref VpcCidr
+
+        PublicSubnetAZ1Cidr:
+          !Ref PublicSubnetAZ1Cidr
+
+        PublicSubnetAZ2Cidr:
+          !Ref PublicSubnetAZ2Cidr
+
+        AvailabilityZone1:
+          !Ref AvailabilityZone1
+
+        AvailabilityZone2:
+          !Ref AvailabilityZone2
+
+
+  # =======================================================
+  # Security Stack
+  #
+  # Dependency:
+  # NetworkStack -> SecurityStack
+  # =======================================================
+  SecurityStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - "https://${Bucket}.s3.amazonaws.com/${Prefix}/lab71_security.yaml"
+        - Bucket: !Ref TemplateBucket
+          Prefix: !Ref TemplatePrefix
+
+      Parameters:
+        Project:
+          !Ref Project
+
+        VpcId:
+          !GetAtt NetworkStack.Outputs.VpcId
+
+
+  # =======================================================
+  # ALB Stack
+  #
+  # Dependencies:
+  # NetworkStack
+  # SecurityStack
+  # =======================================================
+  ELBStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - "https://${Bucket}.s3.amazonaws.com/${Prefix}/lab71_alb.yaml"
+        - Bucket: !Ref TemplateBucket
+          Prefix: !Ref TemplatePrefix
+
+      Parameters:
+        Project:
+          !Ref Project
+
+        VpcId:
+          !GetAtt NetworkStack.Outputs.VpcId
+
+        PublicSubnetAZ1Id:
+          !GetAtt NetworkStack.Outputs.PublicSubnetAZ1Id
+
+        PublicSubnetAZ2Id:
+          !GetAtt NetworkStack.Outputs.PublicSubnetAZ2Id
+
+        ALBSecurityGroupId:
+          !GetAtt SecurityStack.Outputs.ALBSecurityGroupId
+
+        CertificateArn:
+          !Ref CertificateArn
+
+
+  # =======================================================
+  # Compute Stack
+  #
+  # Dependencies:
+  # NetworkStack
+  # SecurityStack
+  # ELBStack
+  # =======================================================
+  ComputeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - "https://${Bucket}.s3.amazonaws.com/${Prefix}/lab71_compute.yaml"
+        - Bucket: !Ref TemplateBucket
+          Prefix: !Ref TemplatePrefix
+
+      Parameters:
+        Project:
+          !Ref Project
+
+        AmiId:
+          !Ref AmiId
+
+        InstanceType:
+          !Ref InstanceType
+
+        PublicSubnetAZ1Id:
+          !GetAtt NetworkStack.Outputs.PublicSubnetAZ1Id
+
+        PublicSubnetAZ2Id:
+          !GetAtt NetworkStack.Outputs.PublicSubnetAZ2Id
+
+        EC2SecurityGroupId:
+          !GetAtt SecurityStack.Outputs.EC2SecurityGroupId
+
+        TargetGroupArn:
+          !GetAtt ELBStack.Outputs.TargetGroupArn
+
+
+  # =======================================================
+  # DNS Stack
+  #
+  # Dependency:
+  # ELBStack -> DNSStack
+  # =======================================================
+  DNSStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - "https://${Bucket}.s3.amazonaws.com/${Prefix}/lab71_dns.yaml"
+        - Bucket: !Ref TemplateBucket
+          Prefix: !Ref TemplatePrefix
+
+      Parameters:
+        Project:
+          !Ref Project
+
+        HostedZoneId:
+          !Ref HostedZoneId
+
+        DomainName:
+          !Ref DomainName
+
+        LoadBalancerDNSName:
+          !GetAtt ELBStack.Outputs.LoadBalancerDNSName
+
+        LoadBalancerCanonicalHostedZoneId:
+          !GetAtt ELBStack.Outputs.LoadBalancerCanonicalHostedZoneId
+
+
+# =========================================================
+# Outputs
+# =========================================================
+Outputs:
+
+  VpcId:
+    Description: VPC ID
+    Value: !GetAtt NetworkStack.Outputs.VpcId
+
+  PublicSubnetAZ1Id:
+    Description: Public Subnet AZ1 ID
+    Value: !GetAtt NetworkStack.Outputs.PublicSubnetAZ1Id
+
+  PublicSubnetAZ2Id:
+    Description: Public Subnet AZ2 ID
+    Value: !GetAtt NetworkStack.Outputs.PublicSubnetAZ2Id
+
+  ALBSecurityGroupId:
+    Description: ALB Security Group ID
+    Value: !GetAtt SecurityStack.Outputs.ALBSecurityGroupId
+
+  EC2SecurityGroupId:
+    Description: EC2 Security Group ID
+    Value: !GetAtt SecurityStack.Outputs.EC2SecurityGroupId
+
+  TargetGroupArn:
+    Description: Target Group ARN
+    Value: !GetAtt ELBStack.Outputs.TargetGroupArn
+
+  LoadBalancerDNSName:
+    Description: Application Load Balancer DNS Name
+    Value: !GetAtt ELBStack.Outputs.LoadBalancerDNSName
+
+  ApplicationURL:
+    Description: Web application HTTPS URL
+    Value: !Sub "https://${DomainName}"

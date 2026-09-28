@@ -1,0 +1,156 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Network Stack - Create VPC, 2 public subnets, Internet Gateway,
+  route table and subnet route table associations.
+
+Parameters:
+  Project:
+    Type: String
+    Default: lab71
+
+  VpcCidr:
+    Type: String
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+
+  PublicSubnetAZ1Cidr:
+    Type: String
+    Default: 10.0.1.0/24
+    Description: CIDR block for Public Subnet AZ1
+
+  PublicSubnetAZ2Cidr:
+    Type: String
+    Default: 10.0.2.0/24
+    Description: CIDR block for Public Subnet AZ2
+
+  AvailabilityZone1:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: Availability Zone for Public Subnet AZ1
+
+  AvailabilityZone2:
+    Type: AWS::EC2::AvailabilityZone::Name
+    Description: Availability Zone for Public Subnet AZ2
+
+
+Resources:
+
+  # =========================================================
+  # VPC
+  # =========================================================
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref VpcCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-WebVPC"
+
+  # =========================================================
+  # Public Subnet AZ1
+  # =========================================================
+  PublicSubnetAZ1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetAZ1Cidr
+      AvailabilityZone: !Ref AvailabilityZone1
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-PublicSubnetAZ1"
+
+
+  # =========================================================
+  # Public Subnet AZ2
+  # =========================================================
+  PublicSubnetAZ2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Ref PublicSubnetAZ2Cidr
+      AvailabilityZone: !Ref AvailabilityZone2
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-PublicSubnetAZ2"
+
+
+  # =========================================================
+  # Internet Gateway
+  # =========================================================
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-WebInternetGateway"
+
+  # =========================================================
+  # Attach Internet Gateway to VPC
+  # =========================================================
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  # =========================================================
+  # Public Route Table
+  # =========================================================
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-PublicRouteTable"
+
+
+  # =========================================================
+  # Default Route -> Internet Gateway
+  # =========================================================
+  PublicDefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+
+  # =========================================================
+  # Associate Public Subnet AZ1 with Public Route Table
+  # =========================================================
+  PublicSubnetAZ1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAZ1
+      RouteTableId: !Ref PublicRouteTable
+
+
+  # =========================================================
+  # Associate Public Subnet AZ2 with Public Route Table
+  # =========================================================
+  PublicSubnetAZ2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetAZ2
+      RouteTableId: !Ref PublicRouteTable
+
+
+Outputs:
+
+  VpcId:
+    Description: VPC ID
+    Value: !Ref VPC
+
+  PublicSubnetAZ1Id:
+    Description: Public Subnet AZ1 ID
+    Value: !Ref PublicSubnetAZ1
+
+  PublicSubnetAZ2Id:
+    Description: Public Subnet AZ2 ID
+    Value: !Ref PublicSubnetAZ2

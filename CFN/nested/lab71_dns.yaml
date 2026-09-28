@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  DNS Stack - Create Route53 Alias A Record
+  pointing domain name to Application Load Balancer.
+
+Parameters:
+
+  Project:
+    Type: String
+    Default: lab71
+    Description: Project name used as resource name prefix
+
+  HostedZoneId:
+    Type: String
+    Description: Route53 Hosted Zone ID
+
+  DomainName:
+    Type: String
+    Default: lab71.natst.online
+    Description: Domain name used to access the web application
+
+  LoadBalancerDNSName:
+    Type: String
+    Description: DNS name of Application Load Balancer
+
+  LoadBalancerCanonicalHostedZoneId:
+    Type: String
+    Description: Canonical Hosted Zone ID of Application Load Balancer
+
+
+Resources:
+
+  # =========================================================
+  # Route53 Alias A Record
+  # =========================================================
+  WebDNSRecord:
+    Type: AWS::Route53::RecordSet
+    Properties:
+
+      HostedZoneId: !Ref HostedZoneId
+
+      Name: !Ref DomainName
+
+      Type: A
+
+      AliasTarget:
+        DNSName: !Ref LoadBalancerDNSName
+        HostedZoneId: !Ref LoadBalancerCanonicalHostedZoneId
+        EvaluateTargetHealth: true
+
+
+Outputs:
+
+  WebDomainName:
+    Description: Web application domain name
+    Value: !Ref DomainName

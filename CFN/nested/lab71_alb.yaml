@@ -1,0 +1,129 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  ALB Stack - Create Application Load Balancer,
+  Target Group and HTTPS Listener.
+
+Parameters:
+
+  Project:
+    Type: String
+    Default: lab71
+    Description: Project name used as resource name prefix
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID from NetworkStack
+
+  PublicSubnetAZ1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public Subnet AZ1 ID from NetworkStack
+
+  PublicSubnetAZ2Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public Subnet AZ2 ID from NetworkStack
+
+  ALBSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: ALB Security Group ID from SecurityStack
+
+  CertificateArn:
+    Type: String
+    Description: ACM Certificate ARN for HTTPS Listener
+
+Resources:
+
+  # =========================================================
+  # Target Group
+  # ALB -> EC2 port 80
+  # =========================================================
+  WebTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub "${Project}-web-tg"
+
+      VpcId: !Ref VpcId
+
+      Protocol: HTTP
+      Port: 80
+
+      TargetType: instance
+
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPort: traffic-port
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 2
+
+      Matcher:
+        HttpCode: 200
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-WebTargetGroup"
+
+
+  # =========================================================
+  # Application Load Balancer
+  # =========================================================
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub "${Project}-alb"
+
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+
+      Subnets:
+        - !Ref PublicSubnetAZ1Id
+        - !Ref PublicSubnetAZ2Id
+
+      SecurityGroups:
+        - !Ref ALBSecurityGroupId
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-ApplicationLoadBalancer"
+
+
+  # =========================================================
+  # HTTPS Listener
+  # Internet -> ALB :443
+  # =========================================================
+  HTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+
+      Port: 443
+      Protocol: HTTPS
+
+      Certificates:
+        - CertificateArn: !Ref CertificateArn
+
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref WebTargetGroup
+
+
+Outputs:
+
+  TargetGroupArn:
+    Description: ARN of Web Target Group
+    Value: !Ref WebTargetGroup
+
+  LoadBalancerDNSName:
+    Description: DNS name of Application Load Balancer
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+
+  LoadBalancerCanonicalHostedZoneId:
+    Description: Canonical Hosted Zone ID of Application Load Balancer
+    Value: !GetAtt ApplicationLoadBalancer.CanonicalHostedZoneID
+
+  LoadBalancerArn:
+    Description: ARN of Application Load Balancer
+    Value: !Ref ApplicationLoadBalancer

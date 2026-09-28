@@ -1,0 +1,131 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Compute Stack - Create Launch Template and Auto Scaling Group
+  for web EC2 instances.
+
+Parameters:
+
+  Project:
+    Type: String
+    Default: lab71
+    Description: Project name used as resource name prefix
+
+  AmiId:
+    Type: AWS::EC2::Image::Id
+    Description: AMI ID used by EC2 instances
+
+  InstanceType:
+    Type: String
+    Default: t3.micro
+    Description: EC2 instance type
+
+  PublicSubnetAZ1Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public Subnet AZ1 ID from NetworkStack
+
+  PublicSubnetAZ2Id:
+    Type: AWS::EC2::Subnet::Id
+    Description: Public Subnet AZ2 ID from NetworkStack
+
+  EC2SecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
+    Description: EC2 Security Group ID from SecurityStack
+
+  TargetGroupArn:
+    Type: String
+    Description: Target Group ARN from ELBStack
+
+Resources:
+
+  # =========================================================
+  # Launch Template
+  # =========================================================
+  WebLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub "${Project}-WebLaunchTemplate"
+
+      LaunchTemplateData:
+
+        ImageId: !Ref AmiId
+
+        InstanceType: !Ref InstanceType
+
+        SecurityGroupIds:
+          - !Ref EC2SecurityGroupId
+
+        UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            set -e
+
+            dnf update -y
+            dnf install -y nginx
+
+            HOSTNAME=$(hostname)
+
+            cat <<EOF > /usr/share/nginx/html/index.html
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>${Project} Web Server</title>
+            </head>
+            <body>
+              <h1>Wellcome to ${Project} Web Server </h1>
+              <h2>NaTT</h2>
+              <p>Hostname: $HOSTNAME</p>
+            </body>
+            </html>
+            EOF
+
+            systemctl enable nginx
+            systemctl start nginx
+
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: !Sub "${Project}-WebEC2"
+
+
+  # =========================================================
+  # Auto Scaling Group
+  # =========================================================
+  WebAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+
+      VPCZoneIdentifier:
+        - !Ref PublicSubnetAZ1Id
+        - !Ref PublicSubnetAZ2Id
+
+      MinSize: "2"
+      DesiredCapacity: "2"
+      MaxSize: "4"
+
+      LaunchTemplate:
+        LaunchTemplateId: !Ref WebLaunchTemplate
+        Version: !GetAtt WebLaunchTemplate.LatestVersionNumber
+
+      TargetGroupARNs:
+        - !Ref TargetGroupArn
+
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 120
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-WebASG"
+          PropagateAtLaunch: true
+
+
+Outputs:
+
+  LaunchTemplateId:
+    Description: Launch Template ID
+    Value: !Ref WebLaunchTemplate
+
+  AutoScalingGroupName:
+    Description: Auto Scaling Group name
+    Value: !Ref WebAutoScalingGroup

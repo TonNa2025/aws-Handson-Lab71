@@ -1,0 +1,77 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Security Stack - Create Security Groups for ALB and EC2 instances.
+
+Parameters:
+
+  Project:
+    Type: String
+    Default: lab71
+    Description: Project name used as resource name prefix
+
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC ID from NetworkStack
+
+Resources:
+
+  # =========================================================
+  # ALB Security Group
+  # Internet -> ALB HTTPS 443
+  # =========================================================
+  ALBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTPS traffic from Internet to ALB
+      VpcId: !Ref VpcId
+
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-ALBSecurityGroup"
+
+
+  # =========================================================
+  # EC2 Security Group
+  # ALB -> EC2 HTTP 80
+  # =========================================================
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow HTTP traffic from ALB to EC2
+      VpcId: !Ref VpcId
+
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBSecurityGroup
+
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+
+      Tags:
+        - Key: Name
+          Value: !Sub "${Project}-EC2SecurityGroup"
+
+
+Outputs:
+
+  ALBSecurityGroupId:
+    Description: Security Group ID for Application Load Balancer
+    Value: !Ref ALBSecurityGroup
+
+  EC2SecurityGroupId:
+    Description: Security Group ID for EC2 instances
+    Value: !Ref EC2SecurityGroup
